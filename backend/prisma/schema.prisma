@@ -1,0 +1,160 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum RolUsuario {
+  ADMIN
+  SUPERADMIN
+}
+
+enum MetodoPago {
+  EFECTIVO_PRESENCIAL
+  TARJETA_VIRTUAL
+  TRANSFERENCIA
+}
+
+enum EstadoPago {
+  PENDIENTE
+  PAGADO
+  RECHAZADO
+}
+
+enum EstadoComprobante {
+  PENDIENTE
+  APROBADO
+  RECHAZADO
+}
+
+model Usuario {
+  id                    String        @id @default(uuid())
+  email                 String        @unique
+  password              String
+  nombre                String
+  rol                   RolUsuario    @default(ADMIN)
+  createdAt             DateTime      @default(now())
+  reservasConfirmadas   Reserva[]     @relation("ConfirmadaPor")
+  comprobantesRevisados Comprobante[] @relation("RevisadoPor")
+}
+
+model Cancha {
+  id               String    @id @default(uuid())
+  nombre           String
+  descripcion      String?
+  imagenUrl        String?
+  deporte          String?
+  precioHora       Decimal   @db.Decimal(10, 2) // valor en pesos (ARS) por hora, lo carga/edita el admin
+  moneda           String    @default("ARS")
+  activa           Boolean   @default(true)
+  horaApertura     String    // "08:00"
+  horaCierre       String    // "23:00"
+  duracionTurnoMin Int       @default(60)
+  diasDisponibles  Int[]     @default([0, 1, 2, 3, 4, 5, 6]) // 0=domingo … 6=sábado
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  reservas         Reserva[]
+}
+
+model Reserva {
+  id              String       @id @default(uuid())
+  canchaId        String
+  cancha          Cancha       @relation(fields: [canchaId], references: [id])
+  fecha           DateTime     @db.Date
+  horaInicio      String       // "18:00"
+  horaFin         String       // "19:00"
+  estado          Int          @default(1)
+  // 1 = en proceso (hold temporal) | 2 = confirmada
+  // 3 = expirada (se venció el tiempo) | 4 = cancelada/rechazada
+  metodoPago      MetodoPago?
+  estadoPago      EstadoPago   @default(PENDIENTE)
+  montoTotal      Decimal      @db.Decimal(10, 2)
+  clienteNombre   String?
+  clienteTelefono String?
+  clienteEmail    String?
+  expiraEn        DateTime?    // null cuando ya no debe auto-expirar
+  confirmadaEn    DateTime?
+  confirmadaPorId String?
+  confirmadaPor   Usuario?     @relation("ConfirmadaPor", fields: [confirmadaPorId], references: [id])
+  comprobante     Comprobante?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([canchaId, fecha])
+}
+
+model Comprobante {
+  id              String            @id @default(uuid())
+  reservaId       String            @unique
+  reserva         Reserva           @relation(fields: [reservaId], references: [id])
+
+  // el PDF NO se guarda — se procesa en memoria en el request y se descarta.
+  // Solo persiste lo que el parser logra extraer, en limpio:
+  fechaHoraTexto  String?           // tal cual viene del comprobante, ej. "17/septiembre/2026 19:12"
+  fechaDetectada  DateTime?         // versión parseada a Date, para poder cruzar contra el reporte de MP
+  importe         Decimal?          @db.Decimal(10, 2)
+  moneda          String            @default("ARS")
+  motivo          String?
+  numeroOperacion String?
+  esMercadoPago   Boolean           @default(false)
+  validaciones    Json?
+  origen          Json?             // { nombre, banco_o_billetera, cuit_cuil, cvu }
+  destino         Json?             // { nombre, banco_o_billetera, cuit_cuil, cvu }
+  textoExtraido   String?           @db.Text // texto plano completo, por si el regex no capturó algo (liviano, no es el archivo)
+
+  // resultado de cruzar contra el reporte de Mercado Pago
+  matchMp         Boolean           @default(false)
+  referenciaMp    String?           // fila/ID del reporte de MP que coincidió
+
+  estado          EstadoComprobante @default(PENDIENTE)
+  motivoRechazo   String?
+  subidoEn        DateTime          @default(now())
+  revisadoEn      DateTime?
+  revisadoPorId   String?
+  revisadoPor     Usuario?          @relation("RevisadoPor", fields: [revisadoPorId], references: [id])
+
+  @@index([numeroOperacion])
+}
+
+model ReporteMpProcesado {
+  id               String   @id @default(uuid())
+  nombreArchivo    String   @unique // file_name del reporte descargado desde MP
+  periodoDesde     DateTime
+  periodoHasta     DateTime
+  cantidadMatches  Int      @default(0)
+  procesadoEn      DateTime @default(now())
+}
+
+model CuentaTransferencia {
+  id        String   @id @default(uuid())
+  nombre    String   @default("Cuenta del club")
+  cbu       String?
+  alias     String?
+  banco     String?
+  activo    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CuentaMercadoPago {
+  id            String   @id @default(uuid())
+  mpUserId      String   @unique
+  accessToken   String // cifrado, ver backend/src/utils/crypto.js — nunca texto plano
+  refreshToken  String // cifrado, ver backend/src/utils/crypto.js — nunca texto plano
+  publicKey     String?
+  scope         String?
+  expiraToken   DateTime
+  conectadaEn   DateTime @default(now())
+  actualizadaEn DateTime @updatedAt
+}
+
+model OAuthEstadoPendiente {
+  id       String   @id @default(uuid())
+  state    String   @unique
+  usado    Boolean  @default(false)
+  expiraEn DateTime
+  creadoEn DateTime @default(now())
+}

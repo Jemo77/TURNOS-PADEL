@@ -1,0 +1,50 @@
+# Dependencias
+node_modules/
+**/node_modules/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Build outputs
+frontend/dist/
+backend/dist/
+build/
+coverage/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Prisma / DB
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Uploads / local artifacts
+uploads/
+public/uploads/
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.webp
+
+# Temporary files
+.tmp/
+temp/
+frontend/tmp/
+*.tmp
+
+# Bundles temporales de tooling
+tmp/
